@@ -1,0 +1,106 @@
+// --- Pin Assignments ---
+const int trigPin = A0;        // Ultrasonic sensor trigger
+const int echoPin = A1;        // Ultrasonic sensor echo
+const int redLEDPin = A2;      // Red LED
+const int greenLEDPin = A3;    // Green LED
+const int buzzerPin = A4;      // Buzzer
+const int touchPin = A5;       // Capacitive touch sensor
+const int servoPin = 10;       // Servo on D10
+// --- System State ---
+Servo doorServo;
+const float distanceThreshold = 10.0;  // Trigger distance in inches
+bool systemArmed = false;
+bool alarmTriggered = false;
+unsigned long lastTouchTime = 0;
+const unsigned long debounceDelay = 250;
+void setup() {
+  Serial.begin(9600);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(redLEDPin, OUTPUT);
+  pinMode(greenLEDPin, OUTPUT);
+  pinMode(buzzerPin, OUTPUT);
+  pinMode(touchPin, INPUT);
+  doorServo.attach(servoPin);  // Use D10 for servo
+  doorServo.write(90);         // Door open initially
+  Serial.println("System ready. Tap touch sensor to arm.");
+}
+void loop() {
+  handleTouchInput();
+  if (!systemArmed) {
+    digitalWrite(greenLEDPin, HIGH);  // Green LED ON when disarmed
+    digitalWrite(redLEDPin, LOW);
+    noTone(buzzerPin);
+    doorServo.write(90);              // Keep door open
+    return;
+  } else {
+    digitalWrite(greenLEDPin, LOW);
+  }
+  float inches = measureDistance();
+  Serial.print("Distance: ");
+  Serial.print(inches);
+  Serial.println(" in");
+  if (!alarmTriggered) {
+    blinkRed();  // Blink red LED while armed idle
+    if (inches < distanceThreshold) {
+      Serial.println("Object detected! Alarm triggered.");
+      alarmTriggered = true;
+      doorServo.write(0);             // Close door
+      beepFourTimes();
+      digitalWrite(redLEDPin, HIGH);  // Solid red
+    }
+  } else {
+    tone(buzzerPin, 1000);  // Continuous alarm tone
+    if (inches > distanceThreshold + 2) {
+      noTone(buzzerPin);
+      alarmTriggered = false;
+      doorServo.write(90);           // Reopen door
+      digitalWrite(redLEDPin, LOW);
+      Serial.println("Alarm reset. Object cleared.");
+    }
+  }
+  delay(100);
+}
+// --- Touch input with debounce ---
+void handleTouchInput() {
+  if (digitalRead(touchPin) == HIGH) {
+    if (millis() - lastTouchTime > debounceDelay) {
+      systemArmed = !systemArmed;
+      alarmTriggered = false;
+      noTone(buzzerPin);
+      doorServo.write(90);          // Always open door on disarm
+      digitalWrite(redLEDPin, LOW);
+      digitalWrite(greenLEDPin, LOW);
+      Serial.println(systemArmed ? "System armed." : "System disarmed.");
+      lastTouchTime = millis();
+    }
+  }
+}
+// --- Distance measurement using ultrasonic sensor ---
+float measureDistance() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  long duration = pulseIn(echoPin, HIGH, 30000);  // Timeout after 30ms
+  if (duration == 0) return 999.0;  // No echo
+  float distanceInInches = (duration * 0.0133) / 2;
+  return distanceInInches;
+}
+// --- Beep buzzer 4 times ---
+void beepFourTimes() {
+  for (int i = 0; i < 4; i++) {
+    tone(buzzerPin, 1000);
+    delay(200);
+    noTone(buzzerPin);
+    delay(150);
+  }
+}
+// --- Blink red LED while idle ---
+void blinkRed() {
+  digitalWrite(redLEDPin, HIGH);
+  delay(300);
+  digitalWrite(redLEDPin, LOW);
+  delay(300);
+}
